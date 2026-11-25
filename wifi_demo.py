@@ -93,6 +93,52 @@ def scan_wifi():
     else:
         show_output("> NO WI-FI NAMES FOUND\n\n> Turn on Wi-Fi and try again.")
 
+def saved_password_for(name):
+    """Return the Wi-Fi password THIS computer already saved for a network
+    it connected to before, or None.
+
+    Windows stores the password of every network you join. We only read that
+    back with netsh. This works ONLY for networks already saved on this
+    machine — never for a stranger's network.
+    """
+    try:
+        result = subprocess.run(
+            ["netsh", "wlan", "show", "profile", f"name={name}", "key=clear"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), timeout=15,
+        )
+        for line in result.stdout.splitlines():
+            clean = line.strip()
+            if clean.startswith("Key Content") and " : " in clean:
+                return clean.split(" : ", 1)[1].strip()
+        return None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+def crack_wifi(name):
+    """Recover the SAVED password for a network this device joined before."""
+    show_output(f"> TARGET NETWORK: {name}\n")
+    password = saved_password_for(name)
+    steps = [
+        "[*] Reading saved network profiles .... OK",
+        "[*] Locating stored credentials ....... OK",
+        "[*] Decrypting saved key .............. 100%",
+    ]
+    def play(index=0):
+        if index < len(steps):
+            append_output(steps[index])
+            root.after(550, lambda: play(index + 1))
+        elif password:
+            append_output("[+] KEY RECOVERED!")
+            append_output(f"\n[+] WIFI PASSWORD: {password}")
+            append_output("\n> This device connected to this network before,")
+            append_output("> so the password was already saved on it.")
+        else:
+            append_output("[!] NO SAVED PASSWORD")
+            append_output(f"\n> This device never connected to '{name}'.")
+            append_output("> Name only — the password is NOT stored here.")
+    play()
+
 def run_command(event=None):
     command = command_entry.get().strip()
     command_entry.delete(0, tk.END)
@@ -100,12 +146,18 @@ def run_command(event=None):
         append_output(f"\nBLACKOUT@WIFI:~$ {command}")
     if command.upper() == "SCAN WIFI":
         scan_wifi()
+    elif command.upper().startswith("CRACK "):
+        target = command[len("CRACK "):].strip()
+        if target:
+            crack_wifi(target)
+        else:
+            append_output("[!] USAGE: CRACK <wifi name>")
     elif command.upper() == STELLA_COMMAND:
         append_output("\n[+] STELLA ACCESS TOKEN ACCEPTED")
         append_output(f"[+] STELLA PASSWORD: {STELLA_DEMO_PASSWORD}")
         append_output("[+] SESSION REMAINS ACTIVE.")
     elif command.upper() == "HELP":
-        append_output("\nAVAILABLE COMMANDS:\n  SCAN WIFI\n  HELP")
+        append_output("\nAVAILABLE COMMANDS:\n  SCAN WIFI\n  CRACK <wifi name>\n  HELP")
     else:
         append_output("[!] COMMAND NOT FOUND — TYPE HELP")
 
